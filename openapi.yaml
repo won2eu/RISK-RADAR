@@ -1,138 +1,203 @@
 openapi: 3.0.3
 info:
-  title: PR Risk Radar API (Copilot)
-  description: PR 위험도 분석 및 성능 영향 분석을 위한 REST API
-  version: 1.0.1
-
+  title: RISK RADAR API
+  version: "1.0.0"
 servers:
   - url: https://risk-radar-production.up.railway.app
-    description: 프로덕션 서버
-
-components:
-  schemas:
-    HealthzResponse:
-      type: object
-      required: [ok]
-      properties:
-        ok:
-          type: boolean
-          example: true
-
-    ScanPrResponse:
-      type: object
-      required: [owner, repo, pr, score, grade]
-      properties:
-        owner:
-          type: string
-          example: Hwang9170
-        repo:
-          type: string
-          example: Copilot_ai
-        pr:
-          type: integer
-          example: 3
-        title:
-          type: string
-          example: "Improve performance in fetch path"
-        score:
-          type: integer
-          example: 72
-        grade:
-          type: string
-          example: "B"
-        signals:
-          type: object
-          additionalProperties: true
-
-    AnalyzePrPerfRequest:
-      type: object
-      required: [owner, repo, pr]
-      properties:
-        owner:
-          type: string
-          example: Hwang9170
-        repo:
-          type: string
-          example: Copilot_ai
-        pr:
-          type: integer
-          example: 3
-
-    AnalyzePrPerfResponse:
-      type: object
-      required: [ok, pr]
-      properties:
-        ok:
-          type: boolean
-          example: true
-        pr:
-          type: integer
-          example: 3
-        title:
-          type: string
-          example: "Speed up artifact download"
-        complexity_analysis:
-          type: object
-          additionalProperties: true
-        performance_risk:
-          type: object
-          additionalProperties: true
-        summary:
-          type: object
-          additionalProperties: true
-
 paths:
   /healthz:
     get:
-      summary: 헬스체크
-      operationId: getHealthz
+      summary: Health check
+      operationId: healthz
       responses:
-        '200':
-          description: 서버 정상
+        "200":
+          description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/HealthzResponse'
+                type: object
+                properties:
+                  ok: { type: boolean, example: true }
 
   /api/scan-pr:
     get:
-      summary: PR 위험도 분석
-      operationId: getScanPr
+      summary: Scan PR risk signals
+      operationId: scanPr
       parameters:
-        - name: owner
-          in: query
+        - in: query
+          name: owner
           required: true
           schema: { type: string }
-        - name: repo
-          in: query
+          description: GitHub repository owner
+        - in: query
+          name: repo
           required: true
           schema: { type: string }
-        - name: pr
-          in: query
+          description: GitHub repository name
+        - in: query
+          name: pr
           required: true
-          schema: { type: integer }
+          schema: { type: integer, format: int32 }
+          description: Pull Request number
       responses:
-        '200':
-          description: PR 위험도 분석 결과
+        "200":
+          description: Scan result
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ScanPrResponse'
+                $ref: "#/components/schemas/PRScanResponse"
 
   /api/analyze-pr-performance:
-    post:
-      summary: PR 성능 영향 분석
-      operationId: postAnalyzePrPerformance
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AnalyzePrPerfRequest'
+    get:
+      summary: Analyze PR performance impact (no benchmark)
+      description: >
+        벤치마크 없이 PR 메타데이터와 CI 신호로 성능 영향도를 추정합니다.
+        Query 예: ?owner=Hwang9170&repo=Copilot_ai&pr=3
+      operationId: analyzePrPerformance
+      parameters:
+        - in: query
+          name: owner
+          required: true
+          schema: { type: string }
+          description: GitHub repository owner
+        - in: query
+          name: repo
+          required: true
+          schema: { type: string }
+          description: GitHub repository name
+        - in: query
+          name: pr
+          required: true
+          schema: { type: integer, format: int32 }
+          description: Pull Request number
       responses:
-        '200':
-          description: 성능 영향 분석 결과
+        "200":
+          description: Analysis result
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AnalyzePrPerfResponse'
+                $ref: "#/components/schemas/AnalyzePRPerformanceResponse"
+
+components:
+  schemas:
+    PRScanResponse:
+      type: object
+      properties:
+        owner: { type: string }
+        repo: { type: string }
+        pr: { type: integer }
+        title: { type: string }
+        state: { type: string, example: open }
+        base: { type: string }
+        draft: { type: boolean }
+        score: { type: integer, description: 0-100 }
+        grade: { type: string, example: B }
+        signals:
+          type: object
+          properties:
+            size_churn:
+              type: object
+              properties:
+                additions: { type: integer }
+                deletions: { type: integer }
+                points: { type: integer }
+            files_changed:
+              type: object
+              properties:
+                count: { type: integer }
+                points: { type: integer }
+            sensitive_paths:
+              type: object
+              properties:
+                count: { type: integer }
+                points: { type: integer }
+            secrets_in_diff:
+              type: object
+              properties:
+                hits: { type: integer }
+                points: { type: integer }
+            gha_unpinned_actions:
+              type: object
+              properties:
+                count: { type: integer }
+                points: { type: integer }
+            ci_failures:
+              type: object
+              properties:
+                count: { type: integer }
+                points: { type: integer }
+            reviews_changes_requested:
+              type: object
+              properties:
+                flag: { type: boolean }
+                points: { type: integer }
+            author_association:
+              type: object
+              properties:
+                value: { type: string }
+                points: { type: integer }
+            age_days:
+              type: object
+              properties:
+                value: { type: integer }
+                points: { type: integer }
+
+    AnalyzePRPerformanceResponse:
+      type: object
+      properties:
+        ok: { type: boolean, example: true }
+        pr: { type: integer }
+        title: { type: string }
+        complexity_analysis:
+          type: object
+          properties:
+            impact_level: { type: string, enum: [low, medium, high] }
+            complexity_score: { type: number, format: float }
+            file_impact_score: { type: number, format: float }
+            total_changes: { type: integer }
+            changed_files: { type: integer }
+        dependency_changes:
+          type: array
+          items:
+            type: object
+            properties:
+              file: { type: string }
+              additions: { type: integer }
+              deletions: { type: integer }
+              status: { type: string }
+        file_type_analysis:
+          type: object
+          properties:
+            source_code: { type: integer }
+            config: { type: integer }
+            documentation: { type: integer }
+            tests: { type: integer }
+            assets: { type: integer }
+            total_files: { type: integer }
+        ci_metrics:
+          type: object
+          properties:
+            total_duration_ms: { type: integer }
+            success_count: { type: integer }
+            failure_count: { type: integer }
+            total_checks: { type: integer }
+            avg_duration_ms: { type: integer }
+        performance_risk:
+          type: object
+          properties:
+            risk_level: { type: string, enum: [low, medium, high] }
+            risk_score: { type: number, format: float }
+            factors:
+              type: object
+              properties:
+                code_complexity: { type: number }
+                dependency_changes: { type: number }
+                ci_failures: { type: number }
+                file_volume: { type: number }
+        comment_markdown: { type: string }
+        summary:
+          type: object
+          properties:
+            risk_level: { type: string, enum: [low, medium, high] }
+            risk_score: { type: number }
+            recommendation: { type: string }

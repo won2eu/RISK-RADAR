@@ -299,15 +299,12 @@ def calculate_performance_risk(complexity, dependency_changes, ci_metrics, file_
         }
     }
 
-@app.post("/api/analyze-pr-performance")
-async def analyze_pr_performance(payload: dict = Body(...)):
+@app.get("/api/analyze-pr-performance")
+async def analyze_pr_performance(owner: str, repo: str, pr: int):
     """
     벤치마크 없이 PR 성능 영향 분석 (메타데이터 기반)
-    Body 예: { "owner":"Hwang9170", "repo":"Copilot_ai", "pr":3 }
+    Query 예: ?owner=Hwang9170&repo=Copilot_ai&pr=3
     """
-    owner = payload["owner"]
-    repo = payload["repo"]
-    pr = int(payload["pr"])
     
     async with httpx.AsyncClient() as client:
         # PR 기본 정보 가져오기
