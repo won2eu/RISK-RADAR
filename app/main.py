@@ -44,7 +44,6 @@ async def healthz():
 @app.get("/api/scan-pr")
 async def scan_pr(owner: str, repo: str, pr: int):
     async with httpx.AsyncClient() as client:
-        # PR detail
         prj, _ = await get_json(client, f"/repos/{owner}/{repo}/pulls/{pr}")
         head_sha = prj.get("head",{}).get("sha")
         created_at = prj.get("created_at")
@@ -57,7 +56,6 @@ async def scan_pr(owner: str, repo: str, pr: int):
         title = prj.get("title","")
         state = prj.get("state","open")
 
-        # PR files (first 100)
         files, _ = await get_json(client, f"/repos/{owner}/{repo}/pulls/{pr}/files?per_page=100")
         sensitive_touches = 0
         secret_hits = 0
@@ -69,17 +67,14 @@ async def scan_pr(owner: str, repo: str, pr: int):
                 sensitive_touches += 1
             secret_hits += find_secrets_in_diff_patch(patch or "")
             if filename.startswith(".github/workflows/"):
-                # scan added lines for unpinned actions
                 for line in (patch or "").splitlines():
                     if line.startswith('+') and not line.startswith('+++') and 'uses:' in line:
                         if action_unpinned(line):
                             gha_unpinned += 1
 
-        # reviews
         reviews, _ = await get_json(client, f"/repos/{owner}/{repo}/pulls/{pr}/reviews")
         changes_requested = any(r.get("state") == "CHANGES_REQUESTED" for r in reviews)
 
-        # checks on head sha
         ci_failures = 0
         if head_sha:
             check_runs, _ = await get_json(client, f"/repos/{owner}/{repo}/commits/{head_sha}/check-runs")
@@ -89,10 +84,8 @@ async def scan_pr(owner: str, repo: str, pr: int):
                 if concl in ("failure","timed_out","action_required","cancelled"):
                     ci_failures += 1
 
-        # age
         age_days = calc_age_days(created_at or "")
 
-        # Author risk factor
         assoc_risk = {
             "FIRST_TIME_CONTRIBUTOR": 1.0,
             "CONTRIBUTOR": 0.7,
@@ -102,35 +95,44 @@ async def scan_pr(owner: str, repo: str, pr: int):
             "OWNER": 0.2
         }.get(author_assoc, 0.8)
 
-        # Scoring (100 pts)
+        # 점수 산정 상세 내역
+        score_details = []
+
         # S1: Size & churn (max 20)
         s1 = 20 - clamp(int((additions + deletions)/200), 0, 20)
+        score_details.append(f"Size & Churn: +{s1}점 (추가 {additions}, 삭제 {deletions})")
 
         # S2: Files changed (max 10)
         s2 = 10 - clamp(int(changed_files/5), 0, 10)
+        score_details.append(f"변경 파일 수: +{s2}점 ({changed_files}개 파일 변경)")
 
-        # S3: Sensitive files touched (max 20) -> more sensitive touches reduce points
+        # S3: 민감 파일 터치 (max 20)
         s3 = 20 - clamp(sensitive_touches*4, 0, 20)
+        score_details.append(f"민감 파일 터치: +{s3}점 ({sensitive_touches}개 민감 파일)")
 
-        # S4: Secrets in diff (max 20) -> each hit is severe
+        # S4: 시크릿 노출 (max 20)
         s4 = 20 - clamp(secret_hits*5, 0, 20)
+        score_details.append(f"시크릿 노출: +{s4}점 ({secret_hits}건 감지)")
 
-        # S5: GitHub Actions unpinned uses (max 10) -> each unpinned reduces
+        # S5: GitHub Actions unpinned uses (max 10)
         s5 = 10 - clamp(gha_unpinned*3, 0, 10)
+        score_details.append(f"GitHub Actions unpinned: +{s5}점 ({gha_unpinned}건)")
 
-        # S6: CI status (max 10) -> failures reduce
+        # S6: CI 실패 (max 10)
         s6 = 10 - clamp(ci_failures*5, 0, 10)
+        score_details.append(f"CI 실패: +{s6}점 ({ci_failures}건)")
 
-        # S7: Reviews (max 5) -> changes requested reduces
+        # S7: 리뷰 요청 (max 5)
         s7 = 5 - (5 if changes_requested else 0)
+        score_details.append(f"리뷰 변경 요청: +{s7}점 ({'요청됨' if changes_requested else '없음'})")
 
-        # S8: Author association (max 3) -> lower trust reduces
+        # S8: 작성자 신뢰도 (max 3)
         s8 = int(3 - clamp(assoc_risk*2, 0, 3))
+        score_details.append(f"작성자 신뢰도: +{s8}점 (Association: {author_assoc})")
 
-        # S9: Age (staleness) (max 2) -> very old PR reduce
+        # S9: PR 오래됨 (max 2)
         s9 = 2 - (1 if age_days >= 14 else 0)
-
-        # S10: Target default branch boost (max 0 bonus) - omitted in PoC
+        score_details.append(f"PR 오래됨: +{s9}점 ({age_days}일 경과)")
 
         signals = {
             "size_churn": {"additions": additions, "deletions": deletions, "points": s1},
@@ -155,5 +157,6 @@ async def scan_pr(owner: str, repo: str, pr: int):
             "draft": is_draft,
             "score": total,
             "grade": letter,
-            "signals": signals
+            "signals": signals,
+            "score_details": score_details
         }
