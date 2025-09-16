@@ -7,7 +7,12 @@ from .scoring_pr import compute_score, calc_age_days, clamp
 import os
 from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI(title="PR Risk Radar API")
+app = FastAPI(
+    title="RISK RADAR API",
+    version="1.0.0",
+    servers=[{"url": "https://your-domain.com"}],  # Copilot이 불러올 외부 주소
+)
+
 
 app.add_middleware(
     CORSMiddleware,
