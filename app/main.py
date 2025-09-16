@@ -5,6 +5,17 @@ from .github import get_json
 from .secret_patterns import find_secrets_in_diff_patch
 from .scoring_pr import compute_score, calc_age_days, clamp
 import os
+from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI(title="PR Risk Radar API")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # 필요시 특정 도메인으로 제한
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 SENSITIVE_PATH_HINTS = [
     ".github/workflows/",
@@ -34,8 +45,6 @@ def action_unpinned(line: str) -> bool:
     after = line.split('@', 1)[1].strip()
     # if not 40-hex, treat as unpinned
     return not (len(after) >= 40 and all(c in '0123456789abcdef' for c in after[:40].lower()))
-
-app = FastAPI(title="PR Risk Radar API")
 
 @app.get("/healthz")
 async def healthz():
