@@ -1,0 +1,387 @@
+openapi: 3.0.3
+info:
+  title: PR Risk Radar API
+  description: |
+    PR 위험도 분석 및 성능 영향 분석을 위한 REST API
+    
+    ## 주요 기능
+    - PR 위험도 점수 계산 (100점 만점)
+    - 성능 영향 분석 (메타데이터 기반)
+    - 시크릿 탐지 및 보안 분석
+    
+  version: 1.0.0
+  contact:
+    name: PR Risk Radar
+    url: https://github.com/your-org/pr-risk-radar
+
+servers:
+  - url: http://localhost:8000
+    description: 로컬 개발 서버
+  - url: https://risk-radar-production.up.railway.app
+    description: 프로덕션 서버 (Railway)
+
+paths:
+  /healthz:
+    get:
+      summary: 헬스체크
+      description: API 서버 상태 확인
+      operationId: healthz
+      tags:
+        - Health
+      responses:
+        '200':
+          description: 서버 정상
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+
+  /api/scan-pr:
+    get:
+      summary: PR 위험도 분석
+      description: |
+        PR의 위험도를 100점 만점으로 분석합니다.
+        
+        ## 분석 요소
+        - 코드 크기 및 변경량 (20점)
+        - 변경된 파일 수 (10점)
+        - 민감한 경로 터치 (20점)
+        - 시크릿 노출 (20점)
+        - 고정되지 않은 GitHub Actions (10점)
+        - CI 실패 (10점)
+        - 리뷰 요청 (5점)
+        - 작성자 연관성 (3점)
+        - PR 나이 (2점)
+      operationId: scanPr
+      tags:
+        - PR Analysis
+      parameters:
+        - name: owner
+          in: query
+          required: true
+          description: GitHub 저장소 소유자
+          schema:
+            type: string
+            example: "Hwang9170"
+        - name: repo
+          in: query
+          required: true
+          description: GitHub 저장소 이름
+          schema:
+            type: string
+            example: "Copilot_ai"
+        - name: pr
+          in: query
+          required: true
+          description: PR 번호
+          schema:
+            type: integer
+            example: 3
+      responses:
+        '200':
+          description: PR 위험도 분석 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PRRiskAnalysis'
+        '404':
+          description: PR을 찾을 수 없음
+        '500':
+          description: 서버 오류
+
+  /api/analyze-pr-performance:
+    post:
+      summary: PR 성능 영향 분석
+      description: |
+        벤치마크 없이 메타데이터 기반으로 PR의 성능 영향을 분석합니다.
+        
+        ## 분석 요소
+        - 코드 복잡도 분석
+        - 의존성 변경 분석
+        - 파일 타입별 분석
+        - CI 메트릭스 분석
+        - 종합 위험도 계산
+      operationId: analyzePrPerformance
+      tags:
+        - Performance Analysis
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PerformanceAnalysisRequest'
+            example:
+              owner: "Hwang9170"
+              repo: "Copilot_ai"
+              pr: 3
+      responses:
+        '200':
+          description: 성능 영향 분석 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PerformanceAnalysis'
+        '404':
+          description: PR을 찾을 수 없음
+        '500':
+          description: 서버 오류
+
+components:
+  schemas:
+    PRRiskAnalysis:
+      type: object
+      properties:
+        owner:
+          type: string
+          example: "Hwang9170"
+        repo:
+          type: string
+          example: "Copilot_ai"
+        pr:
+          type: integer
+          example: 3
+        title:
+          type: string
+          example: "Add new feature"
+        state:
+          type: string
+          example: "open"
+        base:
+          type: string
+          example: "main"
+        draft:
+          type: boolean
+          example: false
+        score:
+          type: integer
+          minimum: 0
+          maximum: 100
+          example: 85
+        grade:
+          type: string
+          enum: [A, B, C, D, F]
+          example: "B"
+        signals:
+          $ref: '#/components/schemas/PRSignals'
+
+    PRSignals:
+      type: object
+      properties:
+        size_churn:
+          $ref: '#/components/schemas/Signal'
+        files_changed:
+          $ref: '#/components/schemas/Signal'
+        sensitive_paths:
+          $ref: '#/components/schemas/Signal'
+        secrets_in_diff:
+          $ref: '#/components/schemas/Signal'
+        gha_unpinned_actions:
+          $ref: '#/components/schemas/Signal'
+        ci_failures:
+          $ref: '#/components/schemas/Signal'
+        reviews_changes_requested:
+          $ref: '#/components/schemas/Signal'
+        author_association:
+          $ref: '#/components/schemas/Signal'
+        age_days:
+          $ref: '#/components/schemas/Signal'
+
+    Signal:
+      type: object
+      properties:
+        points:
+          type: integer
+          example: 18
+        # 각 신호별로 다른 추가 속성들이 있음
+        # 예: size_churn의 경우 additions, deletions
+        # 예: files_changed의 경우 count
+
+    PerformanceAnalysisRequest:
+      type: object
+      required:
+        - owner
+        - repo
+        - pr
+      properties:
+        owner:
+          type: string
+          description: GitHub 저장소 소유자
+          example: "Hwang9170"
+        repo:
+          type: string
+          description: GitHub 저장소 이름
+          example: "Copilot_ai"
+        pr:
+          type: integer
+          description: PR 번호
+          example: 3
+
+    PerformanceAnalysis:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          example: true
+        pr:
+          type: integer
+          example: 3
+        title:
+          type: string
+          example: "Add new feature"
+        complexity_analysis:
+          $ref: '#/components/schemas/ComplexityAnalysis'
+        dependency_changes:
+          type: array
+          items:
+            $ref: '#/components/schemas/DependencyChange'
+        file_type_analysis:
+          $ref: '#/components/schemas/FileTypeAnalysis'
+        ci_metrics:
+          $ref: '#/components/schemas/CIMetrics'
+        performance_risk:
+          $ref: '#/components/schemas/PerformanceRisk'
+        comment_markdown:
+          type: string
+          description: GitHub 댓글용 마크다운
+        summary:
+          $ref: '#/components/schemas/PerformanceSummary'
+
+    ComplexityAnalysis:
+      type: object
+      properties:
+        impact_level:
+          type: string
+          enum: [low, medium, high]
+          example: "medium"
+        complexity_score:
+          type: number
+          format: float
+          example: 1.2
+        file_impact_score:
+          type: number
+          format: float
+          example: 0.8
+        total_changes:
+          type: integer
+          example: 1200
+        changed_files:
+          type: integer
+          example: 8
+
+    DependencyChange:
+      type: object
+      properties:
+        file:
+          type: string
+          example: "package.json"
+        additions:
+          type: integer
+          example: 5
+        deletions:
+          type: integer
+          example: 2
+        status:
+          type: string
+          example: "modified"
+
+    FileTypeAnalysis:
+      type: object
+      properties:
+        source_code:
+          type: integer
+          example: 5
+        config:
+          type: integer
+          example: 2
+        documentation:
+          type: integer
+          example: 1
+        tests:
+          type: integer
+          example: 3
+        assets:
+          type: integer
+          example: 0
+        total_files:
+          type: integer
+          example: 11
+
+    CIMetrics:
+      type: object
+      properties:
+        total_duration_ms:
+          type: integer
+          example: 45000
+        success_count:
+          type: integer
+          example: 8
+        failure_count:
+          type: integer
+          example: 0
+        total_checks:
+          type: integer
+          example: 8
+        avg_duration_ms:
+          type: number
+          format: float
+          example: 5625.0
+
+    PerformanceRisk:
+      type: object
+      properties:
+        risk_level:
+          type: string
+          enum: [low, medium, high]
+          example: "medium"
+        risk_score:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 100
+          example: 65.5
+        factors:
+          type: object
+          properties:
+            code_complexity:
+              type: number
+              format: float
+              example: 36.0
+            dependency_changes:
+              type: number
+              format: float
+              example: 0.0
+            ci_failures:
+              type: number
+              format: float
+              example: 0.0
+            file_volume:
+              type: number
+              format: float
+              example: 10.0
+
+    PerformanceSummary:
+      type: object
+      properties:
+        risk_level:
+          type: string
+          enum: [low, medium, high]
+          example: "medium"
+        risk_score:
+          type: number
+          format: float
+          example: 65.5
+        recommendation:
+          type: string
+          example: "Standard review"
+
+tags:
+  - name: Health
+    description: 서버 상태 확인
+  - name: PR Analysis
+    description: PR 위험도 분석
+  - name: Performance Analysis
+    description: 성능 영향 분석
